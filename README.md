@@ -1,2 +1,0 @@
-# EncRepository
-Encrypt Repository
