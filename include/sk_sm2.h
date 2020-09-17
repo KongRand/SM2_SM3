@@ -11,8 +11,6 @@
 extern "C" {
 #endif
 
-EC_GROUP *sm2P256_group();
-
 int sk_sm2_keygen(unsigned char *px,     int *pxlen,
                   unsigned char *py,     int *pylen,
                   unsigned char *prikey, int *prilen);

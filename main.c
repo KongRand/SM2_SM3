@@ -1,12 +1,23 @@
 #include <stdio.h>
 #include "sk_sm2.h"
-
-void printf_val(unsigned char *p, unsigned int plen)
+void printf_val(unsigned char *p, int plen)
 {
     printf("\n");
     for (int i = 0; i < plen; ++i)
     {
         printf("%02x", p[i]);
+    }
+    printf("\n");
+}
+
+void printf_hex_val(unsigned char *p, int plen)
+{
+    printf("\n");
+    for (int i = 0; i < plen; ++i)
+    {
+        if ((i != 0) && ((i % 8) == 0))
+            printf("\n");
+        printf("0x%02x, ", p[i]);
     }
     printf("\n");
 }
@@ -23,6 +34,15 @@ void sm2_key_gen()
     int ret = -1;
     ret = sk_sm2_keygen(px, &pxlen, py, &pylen, pd, &pdlen);
     printf("%s line: %d res: %d\n", __func__, __LINE__, ret);
+
+    printf("public key x:");
+    printf_hex_val(px, pxlen);
+
+    printf("public key y:");
+    printf_hex_val(py, pylen);
+
+    printf("private key d:");
+    printf_hex_val(pd, pdlen);
 }
 
 unsigned char test_data[128] = {
@@ -45,14 +65,14 @@ void sm2_encrypt_decrypt()
             px, sizeof(px),
             py, sizeof(py),
             cipher, &cipherlen);
-    printf("%s line: %d res: %d\n", __func__, __LINE__, ret);
-    printf_val(cipher, cipherlen);
+    printf("encrypt cipher: ");
+    printf_hex_val(cipher, cipherlen);
 
     unsigned char plain[128] = {0};
     int plainlen = 128;
     ret = sk_sm2_decrypt(cipher, cipherlen, pd, pdlen, plain, &plainlen);
-    printf("%s line: %d res: %d\n", __func__, __LINE__, ret);
-    printf_val(plain, plainlen);
+    printf("decrypt plain: ");
+    printf_hex_val(plain, plainlen);
 }
 
 void sm2_sign_verify()
@@ -68,14 +88,35 @@ void sm2_sign_verify()
     sk_sm3_e(gm_id, sizeof(gm_id), px, pxlen, py, pylen, test_data, sizeof(test_data), e);
 
     ret = sk_sm2_sign(e, sizeof(e), pd, sizeof(pd), cr, &crlen, cs, &cslen);
-    printf("%s line: %d res: %d\n", __func__, __LINE__, ret);
-    printf_val(cr, crlen);
-    printf_val(cs, cslen);
+    printf("sign r: ");
+    printf_hex_val(cr, crlen);
+
+    printf("sign s: ");
+    printf_hex_val(cs, cslen);
 
     ret = sk_sm2_verify(e, sizeof(e), cr, crlen, cs, cslen, px, pxlen, py, pylen);
     printf("%s line: %d res: %d\n", __func__, __LINE__, ret);
 }
 
+void sm2_point_mul_G()
+{
+    int ret = -1;
+    unsigned char gx[32] = {0};
+    int gxlen = 32;
+    unsigned char gy[32] = {0};
+    int gylen = 32;
+    ret = sk_sm2_point_mul_G(test_data, sizeof(test_data), gx, &gxlen, gy, &gylen);
+    printf("sk_sm2_point_mul_G %d\n", ret);
+    printf_hex_val(gx, gxlen);
+    printf_hex_val(gy, gylen);
+}
+
+void sm2_decode_coordinate_y()
+{
+    unsigned char tpy[32] = {0};
+    sk_decode_coordinate_y(px, tpy, 1);
+    printf_hex_val(tpy, 32);
+}
 
 int main()
 {
@@ -86,6 +127,10 @@ int main()
     sm2_encrypt_decrypt();
 
     sm2_sign_verify();
+
+    sm2_point_mul_G();
+
+    sm2_decode_coordinate_y();
 
     return 0;
 }

@@ -45,197 +45,6 @@ static void sk_printf(unsigned char *src, unsigned int srclen)
     printf("\n");
 }
 
-
-
-EC_GROUP *new_ec_group(int is_prime_field,
-                       const char *p_hex, const char *a_hex, const char *b_hex,
-                       const char *x_hex, const char *y_hex, const char *n_hex, const char *h_hex)
-{
-    int ok = 0;
-    EC_GROUP *group = NULL;
-    BN_CTX *ctx = NULL;
-    BIGNUM *p = NULL;
-    BIGNUM *a = NULL;
-    BIGNUM *b = NULL;
-    BIGNUM *x = NULL;
-    BIGNUM *y = NULL;
-    BIGNUM *n = NULL;
-    BIGNUM *h = NULL;
-    EC_POINT *G = NULL;
-    point_conversion_form_t form = SM2_DEFAULT_POINT_CONVERSION_FORM;
-    int flag = 0;
-
-    if (!(ctx = BN_CTX_new()))
-        goto err;
-
-    p = BN_new();
-    a = BN_new();
-    b = BN_new();
-    x = BN_new();
-    y = BN_new();
-    n = BN_new();
-    h = BN_new();
-
-    if (!BN_hex2bn(&p, p_hex) ||
-        !BN_hex2bn(&a, a_hex) ||
-        !BN_hex2bn(&b, b_hex) ||
-        !BN_hex2bn(&x, x_hex) ||
-        !BN_hex2bn(&y, y_hex) ||
-        !BN_hex2bn(&n, n_hex) ||
-        !BN_hex2bn(&h, h_hex)) {
-        goto err;
-    }
-
-    if (is_prime_field) {
-        if (!(group = EC_GROUP_new_curve_GFp(p, a, b, ctx))) {
-            goto err;
-        }
-        if (!(G = EC_POINT_new(group))) {
-            goto err;
-        }
-        if (!EC_POINT_set_affine_coordinates_GFp(group, G, x, y, ctx)) {
-            goto err;
-        }
-    }
-    else {
-        if (!(group = EC_GROUP_new_curve_GF2m(p, a, b, ctx))) {
-            goto err;
-        }
-        if (!(G = EC_POINT_new(group))) {
-            goto err;
-        }
-        if (!EC_POINT_set_affine_coordinates_GF2m(group, G, x, y, ctx)) {
-            goto err;
-        }
-    }
-
-    if (!EC_GROUP_set_generator(group, G, n, h)) {
-        goto err;
-    }
-
-    EC_GROUP_set_asn1_flag(group, flag);
-    EC_GROUP_set_point_conversion_form(group, form);
-
-    ok = 1;
-err:
-    if (ctx) BN_CTX_free(ctx);
-    if (p) BN_free(p);
-    if (a) BN_free(a);
-    if (b) BN_free(b);
-    if (x) BN_free(x);
-    if (y) BN_free(y);
-    if (n) BN_free(n);
-    if (h) BN_free(h);
-    if (G) EC_POINT_free(G);
-    if (!ok && group) {
-        EC_GROUP_free(group);
-        group = NULL;
-    }
-    return group;
-}
-
-EC_GROUP *sm2P256_group()
-{
-    return new_ec_group(1,
-                        "FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFF",
-                        "FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFC",
-                        "28E9FA9E9D9F5E344D5A9E4BCF6509A7F39789F515AB8F92DDBCBD414D940E93",
-                        "32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7",
-                        "BC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0",
-                        "FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123",
-                        "1");
-}
-
-EC_POINT *sm2G_point(int is_prime_field, const EC_GROUP *group)
-{
-    char *hx = "32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7";
-    char *hy = "BC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0";
-    EC_POINT *pointG = NULL;
-    BN_CTX   *ctx    = NULL;
-    BIGNUM   *bx     = NULL;
-    BIGNUM   *by     = NULL;
-
-    if (!group)
-        goto err;
-    if (!(pointG = EC_POINT_new(group)))
-        goto err;
-    if (!(ctx = BN_CTX_new()))
-        goto err;
-
-    if (!BN_hex2bn(&bx, hx) ||
-        !BN_hex2bn(&by, hy))
-        goto err;
-
-    if (is_prime_field) {
-        if (!EC_POINT_set_affine_coordinates_GFp(group, pointG, bx, by, ctx))
-            goto err;
-    }
-    else {
-        if (!EC_POINT_set_affine_coordinates_GF2m(group, pointG, bx, by, ctx))
-            goto err;
-    }
-err:
-    if (bx)   BN_free(bx);
-    if (by)   BN_free(by);
-    if (ctx)  BN_CTX_free(ctx);
-    return pointG;
-}
-
-int sk_sm2_keygen(unsigned char *px, int *pxlen,
-                  unsigned char *py, int *pylen,
-                  unsigned char *prikey, int *prilen)
-{
-    int ret = -1;
-    const BIGNUM   *bn;
-    const EC_POINT *ecpoint;
-    BIGNUM   *bx    = NULL;
-    BIGNUM   *by    = NULL;
-    BN_CTX   *ctx   = NULL;
-    EC_KEY   *eckey = NULL;
-    EC_GROUP *group = NULL;
-
-    if (!(bx = BN_new()))
-        goto err;
-    if (!(by = BN_new()))
-        goto err;
-    if (!(ctx = BN_CTX_new()))
-        goto err;
-    if (!(group = EC_GROUP_new_by_curve_name(NID_sm2)))
-        goto err;
-    if (!(eckey = EC_KEY_new()))
-        goto err;
-
-    /* generate sm2 key */
-    ret = EC_KEY_set_group(eckey, group);
-    if (ret != 1)
-        goto err;
-
-    ret = EC_KEY_generate_key(eckey);
-    if (ret != 1)
-        goto err;
-
-    /* ec private key */
-    if (!(bn = EC_KEY_get0_private_key(eckey)))
-        goto err;
-    *prilen = BN_bn2bin(bn, prikey);
-
-    /* ec public key */
-    if (!(ecpoint = EC_KEY_get0_public_key(eckey)))
-        goto err;
-    ret = EC_POINT_get_affine_coordinates(group, ecpoint, bx, by, ctx);
-    *pxlen = BN_bn2bin(bx, px);
-    *pylen = BN_bn2bin(by, py);
-    ret = 0;
-err:
-    if (bx)    BN_free(bx);
-    if (by)    BN_free(by);
-    if (ctx)   BN_CTX_free(ctx);
-    if (group) EC_GROUP_free(group);
-    if (eckey) EC_KEY_free(eckey);
-    return ret;
-}
-
-
 /* ZA = H256(ENT LA ∥ IDA ∥ a ∥ b ∥ xG ∥ yG ∥ xA ∥ yA) */
 int sk_sm3_z(const unsigned char *id ,int idlen,
              const unsigned char *px, int pxlen,
@@ -289,52 +98,107 @@ int sk_sm3_e(const unsigned char *id, int idlen,
     return 0;
 }
 
+int sk_sm2_keygen(unsigned char *px, int *pxlen,
+                  unsigned char *py, int *pylen,
+                  unsigned char *prikey, int *prilen)
+{
+    int ret = -1;
+    BN_CTX   *ctx   = NULL;
+    EC_KEY   *eckey = NULL;         /* Curve Info */
+    const EC_GROUP *group  = NULL;
+    const BIGNUM   *bd     = NULL;  /* BigNum Private Key */
+    const EC_POINT *pointP = NULL;  /* Public Key Point */
+    BIGNUM *bx  = NULL;
+    BIGNUM *by  = NULL;
+
+    if (!(ctx = BN_CTX_new()))
+        goto err;
+    BN_CTX_start(ctx);
+    if (!(bx = BN_CTX_get(ctx)))
+        goto err;
+    if (!(by = BN_CTX_get(ctx)))
+        goto err;
+    if (!(eckey = EC_KEY_new_by_curve_name(NID_sm2)))
+        goto err;
+    if (!(group = EC_KEY_get0_group(eckey)))
+        goto err;
+
+    /* generate sm2 key */
+    ret = EC_KEY_generate_key(eckey);
+    if (ret != 1)
+        goto err;
+
+    /* ec private key */
+    if (!(bd = EC_KEY_get0_private_key(eckey)))
+        goto err;
+    *prilen = BN_bn2bin(bd, prikey);
+
+    /* ec public key */
+    if (!(pointP = EC_KEY_get0_public_key(eckey)))
+        goto err;
+    if (EC_POINT_get_affine_coordinates(group, pointP, bx, by, ctx) != 1)
+        goto err;
+
+    *pxlen = BN_bn2bin(bx, px);
+    *pylen = BN_bn2bin(by, py);
+
+    ret = 0;
+ err:
+    if (ctx)   BN_CTX_end(ctx);
+    if (ctx)   BN_CTX_free(ctx);
+    if (eckey) EC_KEY_free(eckey);
+    return ret;
+}
+
 int sk_sm2_point_mul_G(const unsigned char *pe, int pelen,
                        unsigned char *px, int *pxlen,
                        unsigned char *py, int *pylen)
 {
     int ret = -1;
-    BIGNUM *bx = NULL, *by = NULL, *be = NULL;
-    EC_GROUP *group = NULL;
-    EC_POINT *pointG = NULL;
     BN_CTX *ctx = NULL;
+    BIGNUM *be  = NULL;
+    EC_GROUP *group = NULL;        /* Curve Info */
+    const EC_POINT *pointG = NULL;
 
-    if (!(bx = BN_new()))
-        goto err;
-    if (!(by = BN_new()))
-        goto err;
-    if (!(be = BN_new()))
-        goto err;
+    EC_POINT *point = NULL;        /* Temp Point */
+    BIGNUM *bx = NULL;
+    BIGNUM *by = NULL;
+
+
     if (!(group = EC_GROUP_new_by_curve_name(NID_sm2)))
         goto err;
     if (!(ctx = BN_CTX_new()))
         goto err;
-    if (!(pointG = sm2G_point(1, group)))
+    BN_CTX_start(ctx);
+    if (!(bx = BN_CTX_get(ctx)))
+        goto err;
+    if (!(by = BN_CTX_get(ctx)))
+        goto err;
+    if (!(be = BN_CTX_get(ctx)))
+        goto err;
+    if (!(pointG = EC_GROUP_get0_generator(group)))
+        goto err;
+    if (!(point = EC_POINT_new(group)))
         goto err;
 
     // BN Value
     if (!BN_bin2bn(pe, pelen, be))
         goto err;
-
     // Point mul
-    if (EC_POINT_mul(group, pointG, NULL, pointG, be, ctx) != 1)
+    if (EC_POINT_mul(group, point, NULL, pointG, be, ctx) != 1)
         goto err;
-
     // Get Point
-    if (EC_POINT_get_affine_coordinates(group, pointG, bx, by, ctx) != 1)
+    if (EC_POINT_get_affine_coordinates(group, point, bx, by, ctx) != 1)
         goto err;
-
     *pxlen = BN_bn2bin(bx, (unsigned char *) px);
     *pylen = BN_bn2bin(by, (unsigned char *) py);
 
     ret = 0;
 err:
-    if(bx) BN_free(bx);
-    if(by) BN_free(by);
-    if(be) BN_free(be);
-    if(group) EC_GROUP_free((EC_GROUP *)group);
-    if(pointG) EC_POINT_free(pointG);
-    if(ctx) BN_CTX_free(ctx);
+    if (ctx)   BN_CTX_end(ctx);
+    if (ctx)   BN_CTX_free(ctx);
+    if (point) EC_POINT_free(point);
+    if (group) EC_GROUP_free(group);
     return ret;
 }
 
@@ -344,47 +208,50 @@ int sk_sm2_sign(const unsigned char *hash, int hashlen,
                 unsigned char *cs, int *slen)
 {
     int ret = -1;
-    BIGNUM *be      = NULL;
-    BIGNUM *bk      = NULL;
-    BIGNUM *order   = NULL;
-    BIGNUM *bd      = NULL;
-    BIGNUM *bx1 = NULL, *by1 = NULL;
-    BIGNUM *br = NULL, *bs = NULL, *bn = NULL;    /* sign br bs */
-
-    EC_KEY *eckey   = NULL;
     BN_CTX *ctx     = NULL;
-    EC_POINT *pointX = NULL;
-    EC_POINT *pointG = NULL;
-    const EC_GROUP *group = NULL;
+    EC_KEY *eckey    = NULL;       /* Curve Info */
+    const EC_POINT *pointG = NULL;
+    const EC_GROUP *group  = NULL;
+    BIGNUM *be       = NULL;       /* BigNum hash */
+    BIGNUM *bk       = NULL;       /* BigNum Rand */
+    BIGNUM *bd       = NULL;       /* Private Key */
 
-    if (!(be = BN_new()))
-        goto err;
-    if (!(bk = BN_new()))
-        goto err;
-    if (!(order = BN_new()))
-        goto err;
-    if (!(bd = BN_new()))
-        goto err;
-    if (!(bx1 = BN_new()))
-        goto err;
-    if (!(by1 = BN_new()))
-        goto err;
-    if (!(br = BN_new()))
-        goto err;
-    if (!(bs = BN_new()))
-        goto err;
-    if (!(bn = BN_new()))
-        goto err;
+    EC_POINT *pointX = NULL;       /* Point x value */
+    BIGNUM *bx1      = NULL;
+    BIGNUM *by1      = NULL;
+
+    const BIGNUM *order = NULL;    /* N value */
+    BIGNUM *bn       = NULL;
+    BIGNUM *br       = NULL;       /* Sign BigNum r and s */
+    BIGNUM *bs       = NULL;
+
     if (!(eckey = EC_KEY_new_by_curve_name(NID_sm2)))
         goto err;
     if (!(group = EC_KEY_get0_group(eckey)))
         goto err;
     if (!(ctx = BN_CTX_new()))
         goto err;
+    BN_CTX_start(ctx);
+    if (!(be = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bk = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bd = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bx1 = BN_CTX_get(ctx)))
+        goto err;
+    if (!(by1 = BN_CTX_get(ctx)))
+        goto err;
+    if (!(br = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bs = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bn = BN_CTX_get(ctx)))
+        goto err;
 
     if (!(pointX = EC_POINT_new(group)))
         goto err;
-    if (!(pointG = sm2G_point(1, group)))
+    if (!(pointG = EC_GROUP_get0_generator(group)))
         goto err;
 
     if (!BN_bin2bn(d, dlen, bd))
@@ -395,7 +262,7 @@ int sk_sm2_sign(const unsigned char *hash, int hashlen,
         goto err;
 
     /* get n from eckey */
-    if (EC_GROUP_get_order(group, order, ctx) != 1)
+    if (!(order = EC_GROUP_get0_order(group)))
         goto err;
 
     /* cal br bs */
@@ -445,19 +312,10 @@ int sk_sm2_sign(const unsigned char *hash, int hashlen,
 
     ret = 0;
 err:
-    if (be)  BN_free(be);
-    if (bk)  BN_free(bk);
-    if (order) BN_free(order);
-    if (bd)  BN_free(bd);
-    if (bn)  BN_free(bn);
-    if (br)  BN_free(br);
-    if (bs)  BN_free(bs);
-    if (bx1)  BN_free(bx1);
-    if (by1)  BN_free(by1);
-    if (eckey) EC_KEY_free(eckey);
-    if (ctx) BN_CTX_free(ctx);
+    if (ctx)    BN_CTX_end(ctx);
+    if (ctx)    BN_CTX_free(ctx);
+    if (eckey)  EC_KEY_free(eckey);
     if (pointX) EC_POINT_free(pointX);
-    if (pointG) EC_POINT_free(pointG);
     return ret;
 }
 
@@ -468,37 +326,37 @@ int sk_sm2_verify(const unsigned char *hash, int hashlen,
                   const unsigned char *py,   int pylen)
 {
     int ret = -1;
-    int i   = 0;
-    BIGNUM *bx    = NULL;
-    BIGNUM *by    = NULL;
-    BIGNUM *br    = NULL;
-    BIGNUM *bs    = NULL;
-    EC_KEY *eckey = NULL;
-    ECDSA_SIG *sig = NULL;
+    BN_CTX *ctx   = NULL;
 
-    const EC_GROUP *ec_group = NULL;
+    EC_KEY *eckey = NULL;     /* Curve Info */
+    BIGNUM *bx    = NULL;     /* Public Key */
+    BIGNUM *by    = NULL;
+
+    ECDSA_SIG *sig = NULL;    /* ECDSA Sign */
+    BIGNUM *br     = NULL;
+    BIGNUM *bs     = NULL;
+
+    const EC_GROUP *group = NULL;
     const EC_POINT *pub_key = NULL;
     EC_POINT *point = NULL;
-    BN_CTX *ctx = NULL;
-    BIGNUM *order = NULL;
+    const BIGNUM *order = NULL;
     BIGNUM *e = NULL;
     BIGNUM *t = NULL;
 
-    if (!(bx = BN_new()))
-        goto err;
-    if (!(by = BN_new()))
+    if (!(ctx = BN_CTX_new()))
         goto err;
     if (!(br = BN_new()))
         goto err;
     if (!(bs = BN_new()))
         goto err;
-    if (!(ctx = BN_CTX_new()))
+    BN_CTX_start(ctx);
+    if (!(bx = BN_CTX_get(ctx)))
         goto err;
-    if (!(order = BN_new()))
+    if (!(by = BN_CTX_get(ctx)))
         goto err;
-    if (!(e = BN_new()))
+    if (!(e = BN_CTX_get(ctx)))
         goto err;
-    if (!(t = BN_new()))
+    if (!(t = BN_CTX_get(ctx)))
         goto err;
     if (!(eckey = EC_KEY_new_by_curve_name(NID_sm2)))
         goto err;
@@ -518,14 +376,12 @@ int sk_sm2_verify(const unsigned char *hash, int hashlen,
     if (ECDSA_SIG_set0(sig, br, bs) != 1)
         goto err;
 
-    if (!(ec_group = EC_KEY_get0_group(eckey)) ||
-        !(pub_key  = EC_KEY_get0_public_key(eckey))) {
-        return -1;
-    }
-
-    if (!EC_GROUP_get_order(ec_group, order, ctx)) {
+    if (!(group = EC_KEY_get0_group(eckey)) ||
+        !(pub_key  = EC_KEY_get0_public_key(eckey)))
         goto err;
-    }
+
+    if (!(order = EC_GROUP_get0_order(group)))
+        goto err;
 
     /* check r, s in [1, n-1] and r + s != 0 (mod n) */
     if (BN_is_zero(ECDSA_SIG_get0_r(sig)) ||
@@ -533,51 +389,41 @@ int sk_sm2_verify(const unsigned char *hash, int hashlen,
         BN_ucmp(ECDSA_SIG_get0_r(sig), order) >= 0 ||
         BN_is_zero(ECDSA_SIG_get0_s(sig)) ||
         BN_is_negative(ECDSA_SIG_get0_s(sig)) ||
-        BN_ucmp(ECDSA_SIG_get0_s(sig), order) >= 0) {
-        ret = -1;
+        BN_ucmp(ECDSA_SIG_get0_s(sig), order) >= 0)
         goto err;
-    }
 
     /* check t = r + s != 0 */
-    if (!BN_mod_add(t, ECDSA_SIG_get0_r(sig), ECDSA_SIG_get0_s(sig), order, ctx)) {
+    if (!BN_mod_add(t, ECDSA_SIG_get0_r(sig), ECDSA_SIG_get0_s(sig), order, ctx))
         goto err;
-    }
-    if (BN_is_zero(t)) {
-        ret = 0;
+
+    if (BN_is_zero(t))
         goto err;
-    }
 
     /* convert digest to e */
-    i = BN_num_bits(order);
-
     if (!BN_bin2bn(hash, hashlen, e)) {
         goto err;
     }
 
     /* compute (x, y) = sG + tP, P is pub_key */
-    if (!(point = EC_POINT_new(ec_group))) {
+    if (!(point = EC_POINT_new(group)))
         goto err;
-    }
-    if (!EC_POINT_mul(ec_group, point, ECDSA_SIG_get0_s(sig), pub_key, t, ctx)) {
+    if (!EC_POINT_mul(group, point, ECDSA_SIG_get0_s(sig), pub_key, t, ctx))
         goto err;
-    }
-    if (EC_METHOD_get_field_type(EC_GROUP_method_of(ec_group)) == NID_X9_62_prime_field) {
-        if (!EC_POINT_get_affine_coordinates_GFp(ec_group, point, t, NULL, ctx)) {
+    if (EC_METHOD_get_field_type(EC_GROUP_method_of(group)) == NID_X9_62_prime_field) {
+        if (!EC_POINT_get_affine_coordinates_GFp(group, point, t, NULL, ctx)) {
             goto err;
         }
     } else /* NID_X9_62_characteristic_two_field */ {
-        if (!EC_POINT_get_affine_coordinates_GF2m(ec_group, point, t, NULL, ctx)) {
+        if (!EC_POINT_get_affine_coordinates_GF2m(group, point, t, NULL, ctx)) {
             goto err;
         }
     }
-    if (!BN_nnmod(t, t, order, ctx)) {
+    if (!BN_nnmod(t, t, order, ctx))
         goto err;
-    }
 
     /* check (sG + tP).x + e  == sig.r */
-    if (!BN_mod_add(t, t, e, order, ctx)) {
+    if (!BN_mod_add(t, t, e, order, ctx))
         goto err;
-    }
 
     if (BN_ucmp(t, ECDSA_SIG_get0_r(sig)) == 0) {
         ret = 0;
@@ -586,17 +432,11 @@ int sk_sm2_verify(const unsigned char *hash, int hashlen,
     }
 
 err:
-    if (bx) BN_free(bx);
-    if (by) BN_free(by);
+    if (ctx)   BN_CTX_end(ctx);
+    if (ctx)   BN_CTX_free(ctx);
+    if (sig)   ECDSA_SIG_free(sig);
     if (eckey) EC_KEY_free(eckey);
-    if (sig) ECDSA_SIG_free(sig);
-
     if (point) EC_POINT_free(point);
-    if (order) BN_free(order);
-    if (e) BN_free(e);
-    if (t) BN_free(t);
-    if (ctx) BN_CTX_free(ctx);
-
     return ret;
 }
 
@@ -608,10 +448,10 @@ int sk_sm2_encrypt(unsigned char *msg, int msglen,
     int loc2 = 0, loc3 = 0;     /* location c2, location c3 */
     size_t len;
     unsigned char *x2_m_y2 = NULL;
-    EC_GROUP *group  = NULL;
-    EC_POINT *point   = NULL;   /* temp point */
-    EC_POINT *pointG  = NULL;   /* G point */
-    EC_POINT *pointP  = NULL;   /* public key */
+    EC_GROUP *group  = NULL;        /* Curve Info */
+    const EC_POINT *pointG  = NULL;
+    EC_POINT *point   = NULL;       /* temp point */
+    EC_POINT *pointP  = NULL;       /* public key */
     BN_CTX *ctx = NULL;
     BIGNUM *bx = NULL;
     BIGNUM *by = NULL;
@@ -621,28 +461,28 @@ int sk_sm2_encrypt(unsigned char *msg, int msglen,
     static unsigned char c1[65] = {0};
     static unsigned char buf[65] = {0};
 
-    if (!(bx = BN_new()))
-        goto err;
-    if (!(by = BN_new()))
-        goto err;
-    if (!(bn = BN_new()))
-        goto err;
-    if (!(bh = BN_new()))
-        goto err;
-    if (!(bk = BN_new()))
-        goto err;
     if (!(x2_m_y2 = (unsigned char *)calloc(1, 96 + msglen)))
         goto err;
-
     if (!(group = EC_GROUP_new_by_curve_name(NID_sm2)))
         goto err;
-    if (!(point = EC_POINT_new(group)))
+    if (!(pointG = EC_GROUP_get0_generator(group)))
         goto err;
-    if (!(pointG = sm2G_point(1, group)))
+    if (!(point = EC_POINT_new(group)))
         goto err;
     if (!(pointP = EC_POINT_new(group)))
         goto err;
     if (!(ctx = BN_CTX_new()))
+        goto err;
+    BN_CTX_start(ctx);
+    if (!(bx = BN_CTX_get(ctx)))
+        goto err;
+    if (!(by = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bn = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bh = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bk = BN_CTX_get(ctx)))
         goto err;
 
     /* init ec domain parameters */
@@ -668,9 +508,9 @@ int sk_sm2_encrypt(unsigned char *msg, int msglen,
         } while (BN_is_zero(bk));
 
         /* C1 = [k]G = (x1, y1) */
-        if (!EC_POINT_mul(group, pointG, bn, pointG, bk, ctx))
+        if (!EC_POINT_mul(group, point, bn, pointG, bk, ctx))
             goto err;
-        if (!(EC_POINT_point2oct(group, pointG,
+        if (!(EC_POINT_point2oct(group, point,
                 POINT_CONVERSION_UNCOMPRESSED, c1, sizeof(c1), ctx)))
             goto err;
 
@@ -720,18 +560,12 @@ int sk_sm2_encrypt(unsigned char *msg, int msglen,
 
     ret = *outlen;
 err:
-
-    if (bx) BN_free(bx);
-    if (by) BN_free(by);
-    if (bn) BN_free(bn);
-    if (bh) BN_free(bh);
-    if (bk) BN_free(bk);
     if (x2_m_y2) free(x2_m_y2);
     
     if (point)  EC_POINT_free(point);
-    if (pointG) EC_POINT_free(pointG);
     if (pointP) EC_POINT_free(pointP);
     if (group)  EC_GROUP_free(group);
+    if (ctx)    BN_CTX_end(ctx);
     if (ctx)    BN_CTX_free(ctx);
     return ret;
 }
@@ -742,32 +576,35 @@ int sk_sm2_decrypt(unsigned char *msg, int msglen,
 {
     int ret = -1;
     int loc2 = 0, loc3 = 0, i = 0, ciplen = 0;
-    EC_GROUP *group = NULL;
-    EC_POINT *point = NULL;
     BN_CTX *ctx = NULL;
 
-    /* C1 value */
+    EC_GROUP *group = NULL;   /* Curve Info */
+    EC_POINT *point = NULL;
+
+    EC_POINT *pointC1 = NULL; /* C1 Info */
     BIGNUM *bx = NULL;
     BIGNUM *by = NULL;
-    EC_POINT *pointC1 = NULL;
-    BIGNUM *bd = NULL;
+
+    BIGNUM *bd = NULL;        /* Private Key */
     BIGNUM *bn = NULL;
     BIGNUM *bh = NULL;
+
     unsigned char hash[EVP_MAX_BLOCK_LENGTH];
     unsigned char *x2_m_y2 = NULL;
     unsigned char buf[(OPENSSL_ECC_MAX_FIELD_BITS + 7) / 4 + 1];
 
-    if (!(bx = BN_new()))
-        goto err;
-    if (!(by = BN_new()))
-        goto err;
-    if (!(bd = BN_new()))
-        goto err;
-    if (!(bn = BN_new()))
-        goto err;
-    if (!(bh = BN_new()))
-        goto err;
     if (!(ctx = BN_CTX_new()))
+        goto err;
+    BN_CTX_start(ctx);
+    if (!(bx = BN_CTX_get(ctx)))
+        goto err;
+    if (!(by = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bd = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bn = BN_CTX_get(ctx)))
+        goto err;
+    if (!(bh = BN_CTX_get(ctx)))
         goto err;
 
     if (!(group = EC_GROUP_new_by_curve_name(NID_sm2)))
@@ -845,13 +682,9 @@ int sk_sm2_decrypt(unsigned char *msg, int msglen,
         goto err;
     ret = ciplen;
 err:
-    if (bx) BN_free(bx);
-    if (by) BN_free(by);
-    if (bd) BN_free(bd);
-    if (bn) BN_free(bn);
-    if (bh) BN_free(bh);
-    if (ctx) BN_CTX_free(ctx);
-    if (group) EC_GROUP_free(group);
+    if (ctx)     BN_CTX_end(ctx);
+    if (ctx)     BN_CTX_free(ctx);
+    if (group)   EC_GROUP_free(group);
     if (pointC1) EC_POINT_free(pointC1);
     if (point)   EC_POINT_free(point);
     if (x2_m_y2) free(x2_m_y2);
@@ -888,7 +721,7 @@ int sk_decode_coordinate_y(unsigned char xONE[32], unsigned char yONE[32], unsig
     memcpy(yONE, xy + 33, 32);
 
     ret = 0;
-err:
+    err:
     if (bx) BN_free(bx);
     if (ctx) BN_CTX_free(ctx);
     if (group) EC_GROUP_free(group);
